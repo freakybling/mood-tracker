@@ -23,3 +23,22 @@ This is a simple **command-line notes application** written in Python using `sql
 ---
 
 ## 💻 How to Run
+
+Make sure you have Python installed. Then:
+
+```bash
+python moodtracker-app.py
+
+(OR)
+
+run .exe file to make it run in your cmd.
+
+---
+
+## 📌 Future Ideas
+
+Add password protection
+
+Export notes to a text or JSON file
+
+GUI version using Tkinter or Flask
