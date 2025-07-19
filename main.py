@@ -10,7 +10,7 @@ def connect_db():
 #home page
 @app.route('/')
 def home():
-    return jsonify("Welcome to my webapp.\n type '/notes in url to get all notes'")
+    return jsonify("Welcome to my webapp.")
 
 
 #Get all notes:
