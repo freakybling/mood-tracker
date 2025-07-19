@@ -1,119 +1,128 @@
+from flask import Flask,jsonify,request
 import sqlite3
-import time
 
-conn = sqlite3.connect("note-app.db")
-cur = conn.cursor()
+app = Flask(__name__)
+DB = "notes.db"
 
-#creating a table
-cur.execute("""
-            CREATE TABLE IF NOT EXISTS notes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            content TEXT NOT NULL,
-            mood TEXT NOT NULL)
-            """)
-conn.commit()
+def connect_db():
+    return sqlite3.connect(DB)
+
+#home page
+@app.route('/')
+def home():
+    return jsonify("Welcome to my webapp.\n type '/notes in url to get all notes'")
 
 
-def search_note():
-     keyword = input("\n🔍 Enter keyword to search in title: ").strip()
-     cur.execute("SELECT * FROM notes WHERE title LIKE ?", (f"%{keyword}%",))
-     rows = cur.fetchall()
+#Get all notes:
+@app.route('/notes/get', methods = ['GET'])
+def get_notes():
+    conn = connect_db()
+    cur = conn.cursor()
+    cur.execute("""
+                CREATE TABLE IF NOT EXISTS notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                mood TEXT NOT NULL)
+                """)
+    cur.execute("SELECT * FROM notes")
+    rows = cur.fetchall()
+    conn.close()
 
-     if rows:
-        print("\n📌 Matching notes:")
-        for row in rows:
-            print(f"ID: {row[0]}, Title: {row[1]}, Mood: {row[3]}")
-     else:
-        print("❌ No matching notes found.")
-     time.sleep(4)
-     return rows, keyword
+    notes= []
+    for row in rows:
+        notes.append({
+            "id": row[0],
+            "title": row[1],
+            "content": row[2],
+            "mood": row[3]
+        })
+    return jsonify(notes)
 
-def delete_by_id():
-    try:
-        id_to_delete = int(input("Entere ID to delete: "))
-        cur.execute("DELETE FROM notes WHERE id = ?", (id_to_delete))
-        conn.commit()
-        print("note deleted")
-    except ValueError:
-        print("Error, enter valid number.")
 
-def delete_all_by_keyword():
-    rows, keyword = search_note()
-    if rows:
-        confirm = input(f"Do your really want to delete all notes of this keyword {keyword}?(Yes/No)").lower()
-        if confirm == "yes":
-            cur.execute("DELETE FROM notes WHERE title LIKE ?", (f"%{keyword}%",))
-            conn.commit()
-        else:
-            print("cancelled.")
-    else:
-        print("No notes to delete.")
-
-def update_note():
-    try:
-        update_id = int(input("📝 Enter ID of the note to update: "))
-        new_title = input("Enter new title: ")
-        new_content = input("Enter new content: ")
-        new_mood = input("Enter your mood: ")
-
-        cur.execute("""
-                    UPDATE notes SET title = ?, content = ?, mood = ? 
-                    WHERE id = ?
-                    """,(new_title, new_content, new_mood, update_id))
-        conn.commit()
-    except ValueError:
-        print("Enter valid input.")
-
+#Post note:
+@app.route('/notes', methods = ['POST'])
 def add_note():
-    title = input("🆕 Title: ")
-    content = input("Content: ")
-    mood = input("Mood: ")
-    cur.execute("INSERT INTO notes (title,content,mood) VALUES (?,?,?)", (title,content,mood))
+    data = request.get_json()
+    title = data.get("title")
+    content = data.get("content")
+    mood = data.get("mood")
+
+    if not title or not content or not mood:
+        return jsonify({"error": "all feilds are empty."}), 400
+    
+    conn = connect_db()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO notes (title, content, mood) VALUES (?,?,?)", (title,content,mood))
     conn.commit()
-    print("Note added")
+    conn.close()
+
+    return jsonify({"message": f"Note Added {title}"}), 201
 
 
-while True:
-    print("\n")
-    print("*"*40)
-    print("📒 NOTES APP MENU")
-    print("1. Add a new note")
-    print("2. Search notes")
-    print("3. Delete a note by ID")
-    print("4. Delete all notes by keyword")
-    print("5. Update a note")
-    print("6. Show all notes")
-    print("7. Exit")
-    print("*"* 40)
-
-    try:
-        choice = int(input("\nEnter your choice: "))
-        
-    except ValueError:
-        print("invalid input, try again.")
-        continue
-    if choice == 1:
-        add_note()
-    elif choice == 2:
-        search_note()
-    elif choice == 3:
-        delete_by_id()
-    elif choice == 4:
-        delete_all_by_keyword()
-    elif choice == 5:
-        update_note()
-    elif choice == 6:
-        cur.execute("SELECT * FROM notes")
-        rows = cur.fetchall()
-        for row in rows:
-            print("\n",row)
-            time.sleep(.5)
-    elif choice == 7:
-        print("\n👋 Exiting... Goodbye!\n")
-        break
-    else:
-        print("\n❌ Invalid option. Try again.\n")
+#search note with keyword
+@app.route('/notes/search', methods = ['GET'])
+def search():
+    keyword = request.args.get('keyword', "")
+    conn = connect_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM notes WHERE title LIKE ?", (f"%{keyword}%",))
+    rows = cur.fetchall()
+    conn.close()
+    
+    if not rows:
+        return jsonify({"message": "No match found..."}), 404
+    
+    notes = []
+    for row in rows:
+        notes.append({
+            "id": row[0],
+            "title": row[1],
+            "content": row[2],
+            "mood": f"{row[3]}\n"
+        })
+    return jsonify(notes)
 
 
-conn.close()
+#update note:
+@app.route('/notes/update/<int:id>', methods=['PUT'])
+def update(id):
+    data = request.get_json()
+    title = data.get('title')
+    content = data.get('content')
+    mood = data.get('mood')
+
+    
+    conn = connect_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM notes WHERE id = ?", (id,))
+    if not cur.fetchone():
+        conn.close()
+        return jsonify({"error": "Note not found"}), 404
+
+    cur.execute("UPDATE notes SET title = ?, content =?, mood =? WHERE id=?", (title,content,mood,id))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({"message":"Note update."})
+
+
+#deleting a note:
+@app.route('/notes/delete/<int:id>', methods=["DELETE"])
+def delete(id):
+    con = connect_db()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM notes WHERE id =?", (id,))
+    if not id:
+        con.close()
+        return jsonify({"message":"ID do not exists."}), 404
+    cur.execute("DELETE FROM notes WHERE id =?",(id,))
+    con.commit()
+    con.close()
+    return jsonify({"message": "The note is Deleted..."})
+
+
+
+
+if __name__ == '__main__':
+    app.run(debug=False)
